@@ -1,12 +1,3 @@
-/**
-* Dustin Sanders, Matt Nubbe, Ted Stein
-* 2017
-* 
-*
-*/
-
-
-
 #include <AccelStepper.h>
 #include <MultiStepper.h>
 #include "quaternionFilters.h"
@@ -19,8 +10,8 @@
 #define RIGHT_DIR_PIN 21
 #define RIGHT_STEP_PIN 20
 
-AccelStepper right(AccelStepper::DRIVER, LEFT_STEP_PIN, LEFT_DIR_PIN);
-AccelStepper left(AccelStepper::DRIVER, RIGHT_STEP_PIN, LEFT_DIR_PIN);
+AccelStepper left(AccelStepper::DRIVER, LEFT_STEP_PIN, LEFT_DIR_PIN);
+AccelStepper right(AccelStepper::DRIVER, RIGHT_STEP_PIN, RIGHT_DIR_PIN);
 MPU9250 myIMU;
 int step_speed = 1600;
 int acc = 1600;
@@ -125,13 +116,17 @@ void loop() {
 
 		if (myIMU.ax > 0) {
 			right.setSpeed(1600);
+      Serial.println("Right Forward!");
 		} else {
 			right.setSpeed(-1600);
+      Serial.println("Right Backward!");
 		}
 		if (myIMU.ay > 0) {
 			left.setSpeed(1600);
+      Serial.println("Left Forward!");
 		} else {
 			left.setSpeed(-1600);
+      Serial.println("Left Backward!");
 		}
 		right.runSpeed();
 		left.runSpeed();
@@ -148,19 +143,19 @@ void loop() {
 	    Serial.println(" mg ");
 
 	    // Print gyro values in degree/sec
-	    Serial.print("X-gyro rate: "); Serial.print(myIMU.gx, 3);
-	    Serial.print(" degrees/sec ");
-	    Serial.print("Y-gyro rate: "); Serial.print(myIMU.gy, 3);
-	    Serial.print(" degrees/sec ");
-	    Serial.print("Z-gyro rate: "); Serial.print(myIMU.gz, 3);
-	    Serial.println(" degrees/sec");
-
-	    myIMU.tempCount = myIMU.readTempData();  // Read the adc values
-	    // Temperature in degrees Centigrade
-	    myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0;
-	    // Print temperature in degrees Centigrade
-	    Serial.print("Temperature is ");  Serial.print(myIMU.temperature, 1);
-	    Serial.println(" degrees C");
+//	    Serial.print("X-gyro rate: "); Serial.print(myIMU.gx, 3);
+//	    Serial.print(" degrees/sec ");
+//	    Serial.print("Y-gyro rate: "); Serial.print(myIMU.gy, 3);
+//	    Serial.print(" degrees/sec ");
+//	    Serial.print("Z-gyro rate: "); Serial.print(myIMU.gz, 3);
+//	    Serial.println(" degrees/sec");
+//
+//	    myIMU.tempCount = myIMU.readTempData();  // Read the adc values
+//	    // Temperature in degrees Centigrade
+//	    myIMU.temperature = ((float) myIMU.tempCount) / 333.87 + 21.0;
+//	    // Print temperature in degrees Centigrade
+//	    Serial.print("Temperature is ");  Serial.print(myIMU.temperature, 1);
+//	    Serial.println(" degrees C");
 	  }
   }
   right.runSpeed();
