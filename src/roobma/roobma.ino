@@ -5,7 +5,6 @@
 
 #include <AccelStepper.h>
 #include <MultiStepper.h>
-#include "quaternionFilters.h"
 #include "MPU9250.h"
 
 // The left Stepper pins
@@ -19,6 +18,9 @@
 
 #define PWM_RES 8
 #define DUTY 127
+
+const uint32_t interrupt_period_cycles = 4800000;
+
 // AccelStepper left(AccelStepper::DRIVER, LEFT_STEP_PIN, LEFT_DIR_PIN);
 // AccelStepper right(AccelStepper::DRIVER, RIGHT_STEP_PIN, RIGHT_DIR_PIN);
 MPU9250 myIMU;
@@ -27,7 +29,7 @@ int min_freq = 10;
 int freq_step = 8;
 // int gospeed = 2400;
 // int acc = 1600;
-int myLed  = 13;  // Set up pin 13 led for toggling
+int myLed = 999;  // Toggling belongs to interrupt handlers. This disables everyone else's.
 #define SerialDebug true  // Set to true to get Serial output for debugging
 
 void setup() {
@@ -41,6 +43,7 @@ void setup() {
   // left.setAcceleration(acc);
 
   pinMode(myLed, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
   digitalWrite(myLed, HIGH);
@@ -110,6 +113,15 @@ void setup() {
     Serial.println(c, HEX);
     while(1) ; // Loop forever if communication doesn't happen
   }
+
+  // Periodic Interal Timer (PIT) setup
+  SIM_SCGC6 |= SIM_SCGC6_PIT;
+  PIT_MCR = 0x00;
+  NVIC_ENABLE_IRQ(IRQ_PIT);
+  PIT_LDVAL0 = interrupt_period_cycles;
+  PIT_TCTRL0 = PIT_TCTRL_TIE;
+  PIT_TCTRL0 |= PIT_TCTRL_TEN;
+  PIT_TFLG0 |= 1;
 }
 
 void loop() {
@@ -224,4 +236,12 @@ int goServos(int freqnecy, int dir)
 	digitalWrite(LEFT_DIR_PIN, -dir);
 
 	return 1;
+}
+
+
+// PIT handler. The LC has one handler for both PITs.
+void pit_isr() {
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  // Reset the flag so we get interrupted again later.
+  PIT_TFLG0 = 1;
 }
