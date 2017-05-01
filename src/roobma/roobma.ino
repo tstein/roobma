@@ -1,20 +1,32 @@
+/*
+* Dustin Sanders, Matt Nubbe, Ted Stein
+*
+*/
+
 #include <AccelStepper.h>
 #include <MultiStepper.h>
 #include "quaternionFilters.h"
 #include "MPU9250.h"
 
-// The X Stepper pins
+// The left Stepper pins
+// Timer 1
 #define LEFT_DIR_PIN 16
 #define LEFT_STEP_PIN 17
-// The Y stepper pins
+// Timer 0
+// The right stepper pins
 #define RIGHT_DIR_PIN 21
 #define RIGHT_STEP_PIN 20
 
-AccelStepper left(AccelStepper::DRIVER, LEFT_STEP_PIN, LEFT_DIR_PIN);
-AccelStepper right(AccelStepper::DRIVER, RIGHT_STEP_PIN, RIGHT_DIR_PIN);
+#define PWM_RES 8
+#define DUTY 127
+// AccelStepper left(AccelStepper::DRIVER, LEFT_STEP_PIN, LEFT_DIR_PIN);
+// AccelStepper right(AccelStepper::DRIVER, RIGHT_STEP_PIN, RIGHT_DIR_PIN);
 MPU9250 myIMU;
-int step_speed = 1600;
-int acc = 1600;
+int max_freq = 1600;
+int min_freq = 10;
+int freq_step = 8;
+// int gospeed = 2400;
+// int acc = 1600;
 int myLed  = 13;  // Set up pin 13 led for toggling
 #define SerialDebug true  // Set to true to get Serial output for debugging
 
@@ -22,14 +34,22 @@ void setup() {
   Wire.begin();
   Serial.begin(38400);
 
-  right.setMaxSpeed(step_speed);
-  right.setAcceleration(acc);
+  // right.setMaxSpeed(step_speed);
+  // right.setAcceleration(acc);
   
-  left.setMaxSpeed(step_speed);
-  left.setAcceleration(acc);
+  // left.setMaxSpeed(step_speed);
+  // left.setAcceleration(acc);
 
   pinMode(myLed, OUTPUT);
+  pinMode(LEFT_DIR_PIN, OUTPUT);
+  pinMode(RIGHT_DIR_PIN, OUTPUT);
   digitalWrite(myLed, HIGH);
+  analogWriteResolution(PWM_RES);
+  analogWriteFrequency(RIGHT_STEP_PIN, min_freq);
+  analogWriteFrequency(LEFT_STEP_PIN, min_freq);
+  analogWrite(RIGHT_STEP_PIN, DUTY);
+  analogWrite(LEFT_STEP_PIN, DUTY); 
+
 
   // Read the WHO_AM_I register, this is a good test of communication
   byte c = myIMU.readByte(MPU9250_ADDRESS, WHO_AM_I_MPU9250);
@@ -93,6 +113,38 @@ void setup() {
 }
 
 void loop() {
+	static int dir = 1;
+	static int inc = 1;
+	static int current_step = 10;
+  digitalWrite(myLed, HIGH);
+	delay(10); 
+  digitalWrite(myLed, LOW);
+	current_step += (inc)? freq_step:-freq_step;
+	// zero crossing
+	if (current_step < min_freq)
+	{
+		if (SerialDebug) { Serial.println("hit min speed"); }
+		current_step = min_freq;
+		// change directions
+		if (dir) {
+			dir = 0;
+			if (SerialDebug) { Serial.println("going backwards"); }
+		} else {
+			dir = 1;
+			if (SerialDebug) { Serial.println("going forwards"); }
+		}
+		// start incrementing again
+		inc = 1;
+	}
+	// hitting max, reverse
+	if (current_step > max_freq)
+	{
+		if (SerialDebug) { Serial.println("hit max speed"); }
+		inc = 0;
+		current_step = max_freq;
+	}
+	goServos(current_step, dir);
+
   if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01)
   {  
     myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
@@ -114,35 +166,35 @@ void loop() {
     // myIMU.readMagData(myIMU.magCount);  // Read the x/y/z adc values
     // myIMU.getMres();
 
-		if (myIMU.ax > 0) {
-			right.setSpeed(1600);
-      Serial.println("Right Forward!");
-		} else {
-			right.setSpeed(-1600);
-      Serial.println("Right Backward!");
-		}
-		if (myIMU.ay > 0) {
-			left.setSpeed(1600);
-      Serial.println("Left Forward!");
-		} else {
-			left.setSpeed(-1600);
-      Serial.println("Left Backward!");
-		}
-		right.runSpeed();
-		left.runSpeed();
-
-		if(SerialDebug)
-	  {
-   
-	    // Print acceleration values in milligs!
-	    Serial.print("X-acceleration: "); Serial.print(1000*myIMU.ax);
-	    Serial.print(" mg ");
-	    Serial.print("Y-acceleration: "); Serial.print(1000*myIMU.ay);
-	    Serial.print(" mg ");
-	    Serial.print("Z-acceleration: "); Serial.print(1000*myIMU.az);
-	    Serial.println(" mg ");
-
-	    // Print gyro values in degree/sec
+		// if (myIMU.ax > 0) {
+		// 	right.setSpeed(gospeed);
+  //     //Serial.println("Right Forwards!");
+		// } else {
+		// 	right.setSpeed(-gospeed);
+  //     //Serial.println("Right Backwards!");
+		// }
+		// if (myIMU.ax > 0) {
+		// 	left.setSpeed(-gospeed);
+  //     //Serial.println("Left Backwards!");
+		// } else {
+		// 	left.setSpeed(gospeed);
+  //     //Serial.println("Left Forwards!");
+		// }
+		// right.runSpeed();
+		// left.runSpeed();
+//
+//		if(SerialDebug)
+//	  {
+//   
+//	    // Print acceleration values in milligs!
+//	    Serial.print("X-acceleration: "); Serial.print(1000*myIMU.ax);
+//	    Serial.print(" mg ");
+//	    Serial.print("Y-acceleration: "); Serial.print(1000*myIMU.ay);
+//	    Serial.print(" mg ");
+//	    Serial.print("Z-acceleration: "); Serial.print(1000*myIMU.az);
+//	    Serial.println(" mg ");
+//      
+//	    // Print gyro values in degree/sec
 //	    Serial.print("X-gyro rate: "); Serial.print(myIMU.gx, 3);
 //	    Serial.print(" degrees/sec ");
 //	    Serial.print("Y-gyro rate: "); Serial.print(myIMU.gy, 3);
@@ -156,8 +208,20 @@ void loop() {
 //	    // Print temperature in degrees Centigrade
 //	    Serial.print("Temperature is ");  Serial.print(myIMU.temperature, 1);
 //	    Serial.println(" degrees C");
-	  }
+//	  }
   }
-  right.runSpeed();
-  left.runSpeed();
+  // right.runSpeed();
+  // left.runSpeed();
+}
+
+// updates both motors, setting the 2nd motor of the 2 opposite
+int goServos(int freqnecy, int dir)
+{
+	analogWriteFrequency(RIGHT_STEP_PIN, freqnecy);
+	analogWriteFrequency(LEFT_STEP_PIN, freqnecy);
+	digitalWrite(RIGHT_DIR_PIN, dir);
+  Serial.print("direction"); Serial.println(dir);
+	digitalWrite(LEFT_DIR_PIN, -dir);
+
+	return 1;
 }
