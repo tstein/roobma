@@ -2,6 +2,8 @@
  * Dustin Sanders, Matthew Nubbe, Ted Stein
  */
 
+#include "math.h"
+
 #include "MPU9250.h"
 
 // The left Stepper pins
@@ -16,14 +18,71 @@
 #define PWM_RES 8
 #define DUTY 127
 
-const uint32_t interrupt_period_cycles = 480000;
+#define SerialDebug true
+
+const uint32_t timer_Hz = 24000000;
+const uint32_t interrupt_Hz = 100;
+const uint32_t interrupt_period_cycles = timer_Hz / interrupt_Hz;
+volatile byte interrupt_flag = 0;
+volatile uint32_t interrupt_count = 0;
 
 MPU9250 myIMU;
-int max_freq = 1600;
-int min_freq = 10;
-int freq_step = 8;
-int doit = 0;
-#define SerialDebug true
+
+const int max_freq = 1600;
+const int min_freq = 10;
+const int freq_step = 8;
+
+// attitude-keeping constants
+const float gravity = 9800.0;           // mm/s^2
+// gyro weight in commanded acceleration
+const float k_derivative = 48.7;        // mm/s^2 / rad/s
+// angle estimation weight
+const float k_proportional = 4000.0;    // mm/s^2 / rad
+// speed feedback weight
+const float k_integral = 12.0;          // mm/s^2 / mm/s
+// position error feedback weight
+const float k_double_integral = 10.0;   // mm/s^2 / mm
+// gyro/commanded accel balance
+// gyro is weighted by this value, commanded accel is the complement
+const float gyro_weight = 0.99;
+// commanded accel coefficient
+const float accel_coefficient = (1 - gyro_weight) / gravity;
+
+const float deg_to_rad = M_PI / 180.0;
+
+const float velocity_soft_limit = 35.0; // mm/s
+const float velocity_hard_limit = 63.0; // mm/s
+const float loop_period = 1 / (float) interrupt_Hz;
+
+const float stepper_freq_ref = 1200;
+const float pulley_circumference = 42.2;  // mm
+const float speed_to_freq = stepper_freq_ref / pulley_circumference;
+
+typedef struct {
+    // sensed
+    float gyro_x = 0.0;                 // rad/s
+    // computed
+    float angle_estimate = 0.0;         // rad
+    float speed = 0.0;                  // mm/s
+    float position_error = 0.0;         // mm
+    // outputs
+    float demanded_speed = 0.0;         // mm/s
+    float accel = 0.0;                  // mm/s^2
+} attitude_state;
+
+attitude_state tick_state;
+attitude_state tock_state;
+
+typedef bool phase_t;
+const phase_t TICK = true;
+const phase_t TOCK = false;
+phase_t phase = TICK;
+
+inline float clamp(float min, float val, float max) {
+  val = fmin(val, max);
+  val = fmax(val, min);
+  return val;
+}
 
 void setup() {
   Wire.begin();
@@ -110,76 +169,88 @@ void setup() {
 }
 
 void loop() {
-  static int dir = 1;
-  static int inc = 1;
-  static int current_step = 10;
-  if(doit) {
-    doit = 0;
-    current_step += (inc)? freq_step:-freq_step;
-    // zero crossing
-    if (current_step < min_freq)
-    {
-        if (SerialDebug) { Serial.println("hit min speed"); }
-        current_step = min_freq;
-        // change directions
-        if (dir) {
-            dir = 0;
-            if (SerialDebug) { Serial.println("going backwards"); }
-        } else {
-            dir = 1;
-            if (SerialDebug) { Serial.println("going forwards"); }
-        }
-        // start incrementing again
-        inc = 1;
+  if (interrupt_flag) {
+    interrupt_flag = 0;
+    if (interrupt_count++ % interrupt_Hz == 0) {
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     }
-    // hitting max, reverse
-    if (current_step > max_freq)
-    {
-        if (SerialDebug) { Serial.println("hit max speed"); }
-        inc = 0;
-        current_step = max_freq;
-    }
-    goServos(current_step, dir);
-
-    if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01)
-    {
-        myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
-        myIMU.getAres();
-        // Now we'll calculate the accleration value into actual g's
-        // This depends on scale being set
-        myIMU.ax = (float)myIMU.accelCount[0]*myIMU.aRes; // - accelBias[0];
-        myIMU.ay = (float)myIMU.accelCount[1]*myIMU.aRes; // - accelBias[1];
-        myIMU.az = (float)myIMU.accelCount[2]*myIMU.aRes; // - accelBias[2];
-
-        myIMU.readGyroData(myIMU.gyroCount);  // Read the x/y/z adc values
-        myIMU.getGres();
-        // Calculate the gyro value into actual degrees per second
-        // This depends on scale being set
-        myIMU.gx = (float)myIMU.gyroCount[0]*myIMU.gRes;
-        myIMU.gy = (float)myIMU.gyroCount[1]*myIMU.gRes;
-        myIMU.gz = (float)myIMU.gyroCount[2]*myIMU.gRes;
-
-    }
+    on_int();
   }
 }
 
-// updates both motors, setting the 2nd motor of the 2 opposite
-int goServos(int freqnecy, int dir)
-{
-  analogWriteFrequency(RIGHT_STEP_PIN, freqnecy);
-  analogWriteFrequency(LEFT_STEP_PIN, freqnecy);
-  digitalWrite(RIGHT_DIR_PIN, dir);
-  Serial.print("direction"); Serial.println(dir);
-  digitalWrite(LEFT_DIR_PIN, -dir);
+void on_int() {
+  //
+  // math happens here
+  //
+  attitude_state* new_state = phase ? &tick_state : &tock_state;
+  attitude_state* old_state = phase ? &tock_state : &tick_state;
+  phase = !phase;
 
+  // read gyro data
+  if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
+      myIMU.readGyroData(myIMU.gyroCount);  // Read the x/y/z adc values
+      myIMU.getGres();
+      // Calculate the gyro value into actual degrees per second
+      // This depends on scale being set
+      float gx_deg_s = (float)myIMU.gyroCount[0] * myIMU.gRes;
+
+      new_state->gyro_x = gx_deg_s * deg_to_rad;
+  }
+
+  // update angle estimation
+  float new_angle_estimate = old_state->angle_estimate;
+  new_angle_estimate += new_state->gyro_x * loop_period;
+  new_angle_estimate *= gyro_weight;
+  new_angle_estimate += old_state->accel * accel_coefficient;
+  new_state->angle_estimate = new_angle_estimate;
+
+  // update speed
+  new_state->speed = 
+    clamp(-velocity_hard_limit,
+          old_state->speed + (old_state->accel * loop_period),
+          velocity_hard_limit);
+
+  // update demanded speed
+  new_state->demanded_speed = old_state->demanded_speed;
+
+  // update position error
+  new_state->position_error = old_state->position_error +
+    ((new_state->speed - new_state->demanded_speed) * loop_period);
+
+  // update commanded accel
+  float suggested_speed =
+    (new_state->position_error * k_double_integral / k_integral)
+    + new_state->demanded_speed;
+  suggested_speed = clamp(-velocity_soft_limit, suggested_speed, velocity_soft_limit);
+
+  new_state->accel =
+    (new_state->gyro_x * k_derivative) +
+    (new_state->angle_estimate * k_proportional) +
+    ((new_state->speed - suggested_speed) * k_integral);
+  new_state->accel = clamp(-10000, new_state->accel, 10000);
+
+
+  //
+  // electricty happens here
+  //
+  int freq = speed_to_freq * fabs(new_state->speed);
+  int dir = new_state->speed > 0 ? 1 : 0;
+  goServos(2000, dir);
+}
+
+// updates both motors, setting the 2nd motor of the 2 opposite
+int goServos(int frequency, int dir)
+{
+  analogWriteFrequency(RIGHT_STEP_PIN, frequency);
+  analogWriteFrequency(LEFT_STEP_PIN, frequency);
+  digitalWrite(RIGHT_DIR_PIN, !dir);
+  digitalWrite(LEFT_DIR_PIN, dir);
   return 1;
 }
 
-
 // PIT handler. The LC has one handler for both PITs.
 void pit_isr() {
-  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   // Reset the flag so we get interrupted again later.
   PIT_TFLG0 = 1;
-  doit = 1;
+  interrupt_flag = 1;
 }
