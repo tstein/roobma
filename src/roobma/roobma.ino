@@ -35,23 +35,23 @@ const int freq_step = 8;
 // attitude-keeping constants
 const float gravity = 9800.0;           // mm/s^2
 // gyro weight in commanded acceleration
-const float k_derivative = 48.7;        // mm/s^2 / rad/s
+const float k_derivative = 3800.0;        // mm/s^2 / rad/s
 // angle estimation weight
-const float k_proportional = 4000.0;    // mm/s^2 / rad
+const float k_proportional = 22000.0;    // mm/s^2 / rad
 // speed feedback weight
-const float k_integral = 12.0;          // mm/s^2 / mm/s
+const float k_integral = 4.5;          // mm/s^2 / mm/s
 // position error feedback weight
-const float k_double_integral = 10.0;   // mm/s^2 / mm
+const float k_double_integral = 7.0;   // mm/s^2 / mm
 // gyro/commanded accel balance
 // gyro is weighted by this value, commanded accel is the complement
-const float gyro_weight = 0.99;
+const float gyro_weight = 0.96;
 // commanded accel coefficient
 const float accel_coefficient = (1 - gyro_weight) / gravity;
 
 const float deg_to_rad = M_PI / 180.0;
 
-const float velocity_soft_limit = 35.0; // mm/s
-const float velocity_hard_limit = 63.0; // mm/s
+const float velocity_soft_limit = 70.0; // mm/s
+const float velocity_hard_limit = 90.0; // mm/s
 const float loop_period = 1 / (float) interrupt_Hz;
 
 const float stepper_freq_ref = 1200;
@@ -91,11 +91,6 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
-  analogWriteResolution(PWM_RES);
-  analogWriteFrequency(RIGHT_STEP_PIN, min_freq);
-  analogWriteFrequency(LEFT_STEP_PIN, min_freq);
-  analogWrite(RIGHT_STEP_PIN, DUTY);
-  analogWrite(LEFT_STEP_PIN, DUTY);
 
 
   // Read the WHO_AM_I register, this is a good test of communication
@@ -157,7 +152,16 @@ void setup() {
     Serial.println(c, HEX);
     while(1) ; // Loop forever if communication doesn't happen
   }
+  digitalWrite(LED_BUILTIN,1);
+  delay(3000);//Wait 3 s to position upright
+  digitalWrite(LED_BUILTIN,0);
 
+  analogWriteResolution(PWM_RES);
+  analogWriteFrequency(RIGHT_STEP_PIN, min_freq);
+  analogWriteFrequency(LEFT_STEP_PIN, min_freq);
+  analogWrite(RIGHT_STEP_PIN, DUTY);
+  analogWrite(LEFT_STEP_PIN, DUTY);
+  
   // Periodic Interal Timer (PIT) setup
   SIM_SCGC6 |= SIM_SCGC6_PIT;
   PIT_MCR = 0x00;
@@ -235,7 +239,7 @@ void on_int() {
   //
   int freq = speed_to_freq * fabs(new_state->speed);
   int dir = new_state->speed > 0 ? 1 : 0;
-  goServos(2000, dir);
+  goServos(freq, dir);
 }
 
 // updates both motors, setting the 2nd motor of the 2 opposite
