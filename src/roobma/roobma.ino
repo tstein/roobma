@@ -41,7 +41,7 @@ const float k_proportional = 25000.0;    // mm/s^2 / rad
 // speed feedback weight
 const float k_integral = 5.0;          // mm/s^2 / mm/s
 // position error feedback weight
-const float k_double_integral = -4.0;   // mm/s^2 / mm
+const float k_double_integral = 4.0;   // mm/s^2 / mm
 // gyro/commanded accel balance
 // gyro is weighted by this value, commanded accel is the complement
 const float gyro_weight = 0.96;
@@ -230,7 +230,7 @@ void on_int() {
   new_state->accel =
     (new_state->gyro_x * k_derivative) +
     (new_state->angle_estimate * k_proportional) +
-    ((new_state->speed - suggested_speed) * k_integral);
+    ((new_state->speed + suggested_speed) * k_integral);
   new_state->accel = clamp(-10000, new_state->accel, 10000);
 
 
