@@ -35,13 +35,13 @@ const int freq_step = 8;
 // attitude-keeping constants
 const float gravity = 9800.0;           // mm/s^2
 // gyro weight in commanded acceleration
-const float k_derivative = 3800.0;        // mm/s^2 / rad/s
+const float k_derivative = 4500.0;        // mm/s^2 / rad/s
 // angle estimation weight
-const float k_proportional = 22000.0;    // mm/s^2 / rad
+const float k_proportional = 25000.0;    // mm/s^2 / rad
 // speed feedback weight
-const float k_integral = 4.5;          // mm/s^2 / mm/s
+const float k_integral = 5.0;          // mm/s^2 / mm/s
 // position error feedback weight
-const float k_double_integral = 7.0;   // mm/s^2 / mm
+const float k_double_integral = -4.0;   // mm/s^2 / mm
 // gyro/commanded accel balance
 // gyro is weighted by this value, commanded accel is the complement
 const float gyro_weight = 0.96;
@@ -50,7 +50,7 @@ const float accel_coefficient = (1 - gyro_weight) / gravity;
 
 const float deg_to_rad = M_PI / 180.0;
 
-const float velocity_soft_limit = 70.0; // mm/s
+const float velocity_soft_limit = 50.0; // mm/s
 const float velocity_hard_limit = 90.0; // mm/s
 const float loop_period = 1 / (float) interrupt_Hz;
 
