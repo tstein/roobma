@@ -58,6 +58,12 @@ const float stepper_freq_ref = 1200;
 const float pulley_circumference = 42.2;  // mm
 const float speed_to_freq = stepper_freq_ref / pulley_circumference;
 
+const float wheel_base = 150.9; // mm
+// time needed to turn 360 deg
+const float turn_time = 15.0; // s
+// rate applied to each wheel on a turn
+const float turn_speed_wheel = wheel_base * M_PI / (2.0 * turn_time); // mm/s
+
 typedef struct {
     // sensed
     float gyro_x = 0.0;                 // rad/s
@@ -237,18 +243,21 @@ void on_int() {
   //
   // electricty happens here
   //
-  int freq = speed_to_freq * fabs(new_state->speed);
-  int dir = new_state->speed > 0 ? 1 : 0;
-  goServos(freq, dir);
+  goServos_f(new_state->speed + turn_speed_wheel, new_state->speed - turn_speed_wheel);
 }
 
+
 // updates both motors, setting the 2nd motor of the 2 opposite
-int goServos(int frequency, int dir)
+int goServos_f(float speed_R, float speed_L)
 {
-  analogWriteFrequency(RIGHT_STEP_PIN, frequency);
-  analogWriteFrequency(LEFT_STEP_PIN, frequency);
-  digitalWrite(RIGHT_DIR_PIN, !dir);
-  digitalWrite(LEFT_DIR_PIN, dir);
+  int frequency_R = speed_to_freq * fabs(speed_R);
+  int dir_R = speed_R > 0 ? 1 : 0;
+  int frequency_L = speed_to_freq * fabs(speed_L);
+  int dir_L = speed_L > 0 ? 1 : 0;
+  analogWriteFrequency(RIGHT_STEP_PIN, frequency_R);
+  analogWriteFrequency(LEFT_STEP_PIN, frequency_L);
+  digitalWrite(RIGHT_DIR_PIN, !dir_R);
+  digitalWrite(LEFT_DIR_PIN, dir_L);
   return 1;
 }
 
