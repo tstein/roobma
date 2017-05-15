@@ -50,7 +50,7 @@ const float accel_coefficient = (1 - gyro_weight) / gravity;
 
 const float deg_to_rad = M_PI / 180.0;
 
-const float velocity_soft_limit = 50.0; // mm/s
+const float velocity_soft_limit = 30.0; // mm/s
 const float velocity_hard_limit = 90.0; // mm/s
 const float loop_period = 1 / (float) interrupt_Hz;
 
@@ -63,6 +63,9 @@ const float wheel_base = 150.9; // mm
 const float turn_time = 15.0; // s
 // rate applied to each wheel on a turn
 const float turn_speed_wheel = wheel_base * M_PI / (2.0 * turn_time); // mm/s
+const float turn_rate_step = turn_speed_wheel / 2.0; //mm/s
+const float demanded_speed_step = 10.0; //mm/s
+const float demanded_speed_limit = 30.0; //mm/s
 
 typedef struct {
     // sensed
@@ -73,6 +76,7 @@ typedef struct {
     float position_error = 0.0;         // mm
     // outputs
     float demanded_speed = 0.0;         // mm/s
+    float demanded_turn_speed = 0.0;    // mm/s
     float accel = 0.0;                  // mm/s^2
 } attitude_state;
 
@@ -223,6 +227,9 @@ void on_int() {
   // update demanded speed
   new_state->demanded_speed = old_state->demanded_speed;
 
+  // update demanded turn speed
+  new_state->demanded_turn_speed = old_state->demanded_turn_speed;
+
   // update position error
   new_state->position_error = old_state->position_error +
     ((new_state->speed - new_state->demanded_speed) * loop_period);
@@ -243,7 +250,60 @@ void on_int() {
   //
   // electricty happens here
   //
-  goServos_f(new_state->speed + turn_speed_wheel, new_state->speed - turn_speed_wheel);
+  goServos_f(new_state->speed + new_state->demanded_turn_speed, 
+    new_state->speed - new_state->demanded_turn_speed);
+
+  // updating commands & comm from upper brain happens here
+  if (Serial.available() > 0) {
+    int byteIn = Serial.read();
+    switch (byteIn) {
+      //WASD controls!
+      case 'w':
+        //increase forward speed
+        new_state->demanded_speed = clamp(-demanded_speed_limit,
+          new_state->demanded_speed + demanded_speed_step,
+          demanded_speed_limit);
+        break;
+      case 's':
+        //decrease forward speed
+        new_state->demanded_speed = clamp(-demanded_speed_limit,
+          new_state->demanded_speed - demanded_speed_step,
+          demanded_speed_limit);
+        break;
+      case 'a':
+        //increase left turn rate
+        new_state->demanded_turn_speed = clamp(-turn_speed_wheel,
+          new_state->demanded_turn_speed - turn_rate_step,
+          turn_speed_wheel);
+        break;
+      case 'd':
+        //increase right turn rate
+        new_state->demanded_turn_speed = clamp(-turn_speed_wheel,
+          new_state->demanded_turn_speed + turn_rate_step,
+          turn_speed_wheel);
+        break;
+      case 'q':
+        //halt speed and turning
+        new_state->demanded_speed = 0.0;
+        new_state->demanded_turn_speed = 0.0;
+        break;
+      case 'h':
+        //halt code, loop forever (falling is likely)
+        hcf();
+        break;
+      case 'f':
+        //print info!
+        Serial.print("d_speed = ");
+        Serial.println(new_state->demanded_speed);
+        Serial.print("d_turn_s = ");
+        Serial.println(new_state->demanded_turn_speed);
+        break;
+      default:
+        Serial.print("unknown message");
+        Serial.println(byteIn);
+        break;
+    }
+  }
 }
 
 
@@ -259,6 +319,14 @@ int goServos_f(float speed_R, float speed_L)
   digitalWrite(RIGHT_DIR_PIN, !dir_R);
   digitalWrite(LEFT_DIR_PIN, dir_L);
   return 1;
+}
+
+//Halt servos, print error message, loop here forever, don't actually catch fire
+void hcf()
+{
+  goServos_f(0.0,0.0);
+  Serial.println("hcf called, you will have to reboot this to continue");
+  while(1){}
 }
 
 // PIT handler. The LC has one handler for both PITs.
